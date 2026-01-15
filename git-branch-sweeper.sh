@@ -56,7 +56,11 @@ Notes:
 EOF
 }
 
-log() { $VERBOSE && echo "[git-branch-sweeper] $*"; }
+log() {
+  if $VERBOSE; then
+    echo "[git-branch-sweeper] $*"
+  fi
+}
 
 die() { echo "Error: $*" >&2; exit 1; }
 
@@ -80,21 +84,26 @@ while [[ $# -gt 0 ]]; do
     --force) FORCE=true; shift ;;
     --local-only) LOCAL_ONLY=true; shift ;;
     --remote-only) REMOTE_ONLY=true; shift ;;
-    --pattern) PATTERN="${2-}"; [[ -n "${PATTERN}" ]] || die "--pattern requires a value"; shift 2 ;;
-    --remote) REMOTE="${2-}"; [[ -n "${REMOTE}" ]] || die "--remote requires a value"; shift 2 ;;
-
+    --pattern)
+      PATTERN="${2-}"
+      [[ -n "${PATTERN}" ]] || die "--pattern requires a value"
+      shift 2
+      ;;
+    --remote)
+      REMOTE="${2-}"
+      [[ -n "${REMOTE}" ]] || die "--remote requires a value"
+      shift 2
+      ;;
     --base)
       [[ -n "${2-}" ]] || die "--base requires a value"
       BASES+=("$2")
       shift 2
       ;;
-
     --protected)
       [[ -n "${2-}" ]] || die "--protected requires a value"
       PROTECTED+=("$2")
       shift 2
       ;;
-
     -v|--verbose) VERBOSE=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (use --help)" ;;
@@ -138,6 +147,12 @@ filter_symbolic_refs() {
   grep -v -- '->' || true
 }
 
+# Trim leading whitespace (spaces/tabs) and leading '*' marker from `git branch` output.
+trim_branch_prefix() {
+  # Handles macOS git branch output that may contain tabs or multiple spaces.
+  sed 's/^[[:space:]*]*//'
+}
+
 # ---- safety checks ----
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Not inside a git repository"
 
@@ -147,7 +162,7 @@ log "BASES=${BASES[*]}"
 log "PROTECTED=${PROTECTED[*]}"
 log "MODE=$( $APPLY && echo apply || echo dry-run )"
 
-# Fetch/prune once (unless remote-only false? still useful for merged checks)
+# Fetch/prune once
 git fetch "$REMOTE" --prune
 
 CUR="$(current_branch)"
@@ -158,13 +173,12 @@ delete_local_list=()
 if ! $REMOTE_ONLY; then
   for base in "${BASES[@]}"; do
     if has_local_branch "$base"; then
-      # list branches merged into base
       while IFS= read -r b; do
         [[ -n "$b" ]] || continue
         delete_local_list+=("$b")
       done < <(
         git branch --merged "$base" \
-          | sed 's/^[* ]\+//' \
+          | trim_branch_prefix \
           | filter_symbolic_refs
       )
     else
@@ -172,7 +186,6 @@ if ! $REMOTE_ONLY; then
     fi
   done
 
-  # uniq
   if [[ ${#delete_local_list[@]} -gt 0 ]]; then
     printf "%s\n" "${delete_local_list[@]}" | sort -u | while IFS= read -r branch; do
       [[ -n "$branch" ]] || continue
@@ -204,7 +217,7 @@ if ! $LOCAL_ONLY; then
         delete_remote_list+=("$rb")
       done < <(
         git branch -r --merged "$REMOTE/$base" \
-          | sed 's/^[* ]\+//' \
+          | trim_branch_prefix \
           | filter_symbolic_refs
       )
     else
@@ -221,7 +234,6 @@ if ! $LOCAL_ONLY; then
           matches_pattern "$branch" || continue
           is_protected "$branch" && continue
 
-          # Never attempt to delete bases themselves if pattern accidentally matches
           for base in "${BASES[@]}"; do
             [[ "$branch" == "$base" ]] && continue 2
           done
