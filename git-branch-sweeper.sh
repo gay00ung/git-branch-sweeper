@@ -82,8 +82,19 @@ while [[ $# -gt 0 ]]; do
     --remote-only) REMOTE_ONLY=true; shift ;;
     --pattern) PATTERN="${2-}"; [[ -n "${PATTERN}" ]] || die "--pattern requires a value"; shift 2 ;;
     --remote) REMOTE="${2-}"; [[ -n "${REMOTE}" ]] || die "--remote requires a value"; shift 2 ;;
-    --base) BASES+=("${2-}"); [[ -n "${BASES[-1]}" ]] || die "--base requires a value"; shift 2 ;;
-    --protected) PROTECTED+=("${2-}"); [[ -n "${PROTECTED[-1]}" ]] || die "--protected requires a value"; shift 2 ;;
+
+    --base)
+      [[ -n "${2-}" ]] || die "--base requires a value"
+      BASES+=("$2")
+      shift 2
+      ;;
+
+    --protected)
+      [[ -n "${2-}" ]] || die "--protected requires a value"
+      PROTECTED+=("$2")
+      shift 2
+      ;;
+
     -v|--verbose) VERBOSE=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (use --help)" ;;
@@ -124,7 +135,7 @@ matches_pattern() {
 
 # Remove lines like "origin/HEAD -> origin/main"
 filter_symbolic_refs() {
-  grep -v '->' || true
+  grep -v -- '->' || true
 }
 
 # ---- safety checks ----
